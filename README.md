@@ -16,7 +16,7 @@ This is the command syntax:
 
     npm run fetch [shape] [loops] [url]
 
-Once you run it you will be prompted to select the video resolution of your preference.
+Once you run it, you will be prompted to select the video resolution of your preference.
 
 The video will be saved under the `animated` folder.
 
@@ -33,7 +33,7 @@ The video will be saved under the `animated` folder.
 
 ### Example
 
-    npm run fetch 2 square https://music.apple.com/us/album/coco-original-motion-picture-soundtrack/1440671241
+    npm run fetch square 2 https://music.apple.com/us/album/coco-original-motion-picture-soundtrack/1440671241
 
 ### More Animated Albums
     https://music.apple.com/us/album/one-of-the-boys/715891425

@@ -1,16 +1,17 @@
 /// <reference types="node" />
 
-import { readFileSync, existsSync, writeFileSync, mkdirSync, renameSync, unlinkSync } from 'fs';
-import { join } from 'path';
-import { IArguments, IM3u8Manifest, IM3uPlaylist, IResourceData, IResourceInfo, ResourceType, VideoShape } from './interfaces';
+import { readFileSync, existsSync, writeFileSync, renameSync, unlinkSync } from 'fs';
+import { IArguments, IM3u8Manifest, IM3uPlaylist, IResourceAttributes, IResourceData, IResourceInfo, ResourceType, VideoShape } from './interfaces';
 import { Parser } from 'm3u8-parser';
 import { printTable } from 'console-table-printer';
-import { httpGet, runCommand } from './utilities';
+import { buildPath, createDirectory, httpGet, runCommand } from './utilities';
 import { RequestOptions } from 'https';
 
 const tokenFileName = 'token.txt';
-const videoFileName = 'video.mp4';
-const loopFileName = 'loop.mp4';
+const ffmpegFileName = 'ffmpeg.exe';
+const videoExtension = '.mp4';
+const videoFileName = 'video' + videoExtension;
+const loopFileName = 'loop' + videoExtension;
 const appleApiUrl = 'https://amp-api.music.apple.com/v1/catalog';
 const tokenCheckUrl = buildApiUrl('in', ResourceType.Album, '1551901062');
 const appleRequestOrigin = 'https://music.apple.com';
@@ -18,7 +19,6 @@ const tokenRetrieveUrl = appleRequestOrigin + '/us/album/positions-deluxe/155394
 const tokenStart = 'eyJhbGc';
 const animatedFolder = 'animated';
 let token = '';
-let animatedPath = '';
 
 (async () => {
   try {
@@ -33,22 +33,24 @@ async function main() {
   const args = getArgs();
   const resourceInfo = getResourceInfo(args.url);
   await setupToken();
-  setupAnimatedPath();
+  createDirectory(animatedFolder);
 
   switch (resourceInfo.type) {
     case ResourceType.Album:
-      getAlbumVideo(resourceInfo.id, resourceInfo.country, args.shape, args.loops);
+      await downloadAlbumVideo(resourceInfo.id, resourceInfo.country, args.shape, args.loops);
       break;
     case ResourceType.Artist:
+      await downloadArtistVideo(resourceInfo.id, resourceInfo.country, args.shape, args.loops);
       break;
     case ResourceType.Playlist:
+      await downloadPlaylistVideo(resourceInfo.id, resourceInfo.country, args.shape, args.loops);
       break;
   }
 }
 
 async function setupToken(): Promise<void> {
   let isTokenValid = false;
-  const tokenFilePath = join(process.cwd(), tokenFileName);
+  const tokenFilePath = buildPath(tokenFileName);
   if (existsSync(tokenFilePath)) {
     const fileBuffer = readFileSync(tokenFilePath);
     const fileToken = fileBuffer.toString();
@@ -69,13 +71,6 @@ async function setupToken(): Promise<void> {
     token = await retrieveToken();
     writeFileSync(tokenFilePath, token);
     console.log('Token updated.');
-  }
-}
-
-function setupAnimatedPath(): void {
-  animatedPath = join(process.cwd(), animatedFolder);
-  if (!existsSync(animatedPath)) {
-    mkdirSync(animatedPath, {recursive: true });
   }
 }
 
@@ -108,16 +103,50 @@ function getResourceInfo(url: string): IResourceInfo {
   };
 }
 
-async function getAlbumVideo(resourceId: string, country: string, shape: string, loops: number): Promise<void> {
-  const url = buildApiUrl(country, ResourceType.Album, resourceId);
-  const albumResponse = await httpGet(url, buildApiOptions());
-  const albumData = JSON.parse(albumResponse.text) as IResourceData;
-  const m3u8 = getM3u8(albumData, shape, ResourceType.Album);
-  const attributes = albumData.data[0].attributes;
+async function downloadAlbumVideo(resourceId: string, country: string, shape: string, loops: number): Promise<void> {
+  await downloadVideo(resourceId, ResourceType.Album, country, shape, loops,
+    attributes => {
+      return `${attributes.artistName} - ${attributes.name} (${attributes.releaseDate.substring(0, 4)})`;
+    }
+  );
+}
+
+async function downloadArtistVideo(resourceId: string, country: string, shape: string, loops: number): Promise<void> {
+  await downloadVideo(resourceId, ResourceType.Artist, country, shape, loops,
+    attributes => {
+      return attributes.name;
+    }
+  );
+}
+
+async function downloadPlaylistVideo(resourceId: string, country: string, shape: string, loops: number): Promise<void> {
+  await downloadVideo(resourceId, ResourceType.Playlist, country, shape, loops,
+    attributes => {
+      return `${attributes.name} (${attributes.lastModifiedDate.substring(0, 4)})`;
+    }
+  );
+}
+
+async function downloadVideo(
+  resourceId: string,
+  resourceType: ResourceType,
+  country: string,
+  shape: string,
+  loops: number,
+  getFileNameFn: (attributes: IResourceAttributes) => string
+): Promise<void> {
+  // Get resource data to create file name
+  const url = buildApiUrl(country, resourceType, resourceId);
+  const resourceResponse = await httpGet(url, buildApiOptions());
+  const resourceData = JSON.parse(resourceResponse.text) as IResourceData;
+  const attributes = resourceData.data[0].attributes;
+  const name = getFileNameFn(attributes);
   const sanitize = require('sanitize-filename');
-  const name = `${attributes.artistName} - ${attributes.name} (${attributes.releaseDate.substring(0, 4)})`;
-  const finalVideoName = sanitize(name) + '.mp4';
-  const finalVideoPath = join(process.cwd(), animatedFolder, finalVideoName);
+  const finalVideoName = sanitize(name) + videoExtension;
+  const finalVideoPath = buildPath(animatedFolder, finalVideoName);
+
+  // Use resource data to retrieve and display video options
+  const m3u8 = getM3u8(resourceData, shape, resourceType);
   const videoResponse = await httpGet(m3u8, {});
   const parser = new Parser();
   parser.push(videoResponse.text);
@@ -125,19 +154,22 @@ async function getAlbumVideo(resourceId: string, country: string, shape: string,
   const manifest = parser.manifest as IM3u8Manifest;
   printPlaylistTable(manifest.playlists);
 
+  // Prompt user for the video option
   const readlineSync = require('readline-sync');
   const selectionId = readlineSync.question('Enter Id: ');
-  const uri = manifest.playlists[parseInt(selectionId, 10)].uri;
-  const ffmpegPath = join(process.cwd(), 'ffmpeg.exe');
 
+  // Download the video
+  const uri = manifest.playlists[parseInt(selectionId, 10)].uri;
+  const ffmpegPath = buildPath(ffmpegFileName);
   console.log('Downloading video...');
-  const videoPath = join(process.cwd(), videoFileName);
+  const videoPath = buildPath(videoFileName);
   const createVideoCommand = `-loglevel quiet -y -i ${uri} -c copy "${videoPath}"`;
   await runCommand(`"${ffmpegPath}" ${createVideoCommand}`);
 
+  // Add loops if needed
   if (loops) {
     console.log('Adding video loops...');
-    const loopPath = join(process.cwd(), loopFileName);
+    const loopPath = buildPath(loopFileName);
     const loopVideoCommand = `-loglevel quiet -y -stream_loop ${loops} -i ${videoFileName} -c copy "${loopPath}"`;
     await runCommand(`"${ffmpegPath}" ${loopVideoCommand}`);
     renameSync(loopPath, finalVideoPath);
@@ -158,7 +190,7 @@ function printPlaylistTable(playlists: IM3uPlaylist[]): void {
       Id: rows.length,
       Resolution: `${playlist.attributes.RESOLUTION.height}x${playlist.attributes.RESOLUTION.width}`,
       Bitrate: `${Math.round(playlist.attributes.BANDWIDTH / 10000) / 100} Mb/s`,
-      Codec: playlist.attributes.CODECS,
+      Codec: playlist.attributes.CODECS.substring(0, 4),
       Fps: playlist.attributes['FRAME-RATE']
     });
   }

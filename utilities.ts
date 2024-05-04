@@ -1,5 +1,7 @@
 import { exec } from 'child_process';
 import { get, RequestOptions } from 'https';
+import { join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
 
 export function runCommand(command: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
@@ -30,4 +32,16 @@ export function httpGet(url: string, options: RequestOptions): Promise<any> {
       });
     });
   });
+}
+
+export function createDirectory(directoryName: string): void {
+  const directoryPath = join(process.cwd(), directoryName);
+  if (!existsSync(directoryPath)) {
+    mkdirSync(directoryPath, {recursive: true });
+  }
+}
+
+export function buildPath(...paths: string[]): string {
+  paths.unshift(process.cwd());
+  return join(...paths);
 }
