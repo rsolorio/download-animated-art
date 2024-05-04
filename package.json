@@ -1,0 +1,18 @@
+{
+  "name": "animated-art-downloader",
+  "version": "0.0.1",
+  "author": "SoloSoft",
+  "description": "Animated Art Downloader",
+  "scripts": {
+    "fetch": "tsc fetch.ts --typeRoots [] && node fetch.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "console-table-printer": "^2.12.0",
+    "m3u8-parser": "^7.1.0",
+    "readline-sync": "^1.4.10",
+    "sanitize-filename": "^1.6.3",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {}
+}
