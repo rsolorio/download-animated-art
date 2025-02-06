@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import { readFileSync, existsSync, writeFileSync, renameSync, unlinkSync } from 'fs';
-import { IArguments, IM3u8Manifest, IM3uPlaylist, IResourceAttributes, IResourceData, IResourceInfo, ResourceType, VideoShape } from './interfaces';
+import { IArguments, IM3u8Manifest, IM3uPlaylist, IResourceAttributes, IResourceData, IResourceInfo, ISearchData, ResourceType, VideoShape } from './interfaces';
 import { Parser } from 'm3u8-parser';
 import { printTable } from 'console-table-printer';
 import { buildPath, createDirectory, httpGet, runCommand } from './utilities';
@@ -13,8 +13,10 @@ const videoExtension = '.mp4';
 const videoFileName = 'video' + videoExtension;
 const loopFileName = 'loop' + videoExtension;
 const appleApiUrl = 'https://amp-api.music.apple.com/v1/catalog';
+/** A random album url from the api to test the token. */
 const tokenCheckUrl = buildApiUrl('in', ResourceType.Album, '1551901062');
 const appleRequestOrigin = 'https://music.apple.com';
+/** Just a random album url from the main site to get the token. */
 const tokenRetrieveUrl = appleRequestOrigin + '/us/album/positions-deluxe/1553944254';
 const tokenStart = 'eyJhbGc';
 const animatedFolder = 'animated';
@@ -222,8 +224,27 @@ function getM3u8(resourceData: IResourceData, shape: string, type: ResourceType)
   throw new Error('Unhandled video shape: ' + shape);
 }
 
+async function hasAnimatedArt(artistName: string, albumName: string): Promise<boolean> {
+  await setupToken();
+  const searchUrl = buildSearchUrl('us', ResourceType.Album, albumName + ' ' + artistName);
+  const searchResponse = await httpGet(searchUrl, buildApiOptions());
+  const searchData = JSON.parse(searchResponse.text) as ISearchData;
+  if (searchData?.results?.albums?.data?.length) {
+    const album = searchData.results.albums.data[0];
+    console.log(album.attributes);
+    if (album?.attributes?.editorialVideo?.motionSquareVideo1x1?.video) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function buildApiUrl(country: string, type: string, id: string): string {
   return `${appleApiUrl}/${country}/${type}s/${id}?extend=editorialVideo`;
+}
+
+function buildSearchUrl(country: string, type: string, term: string): string {
+  return `${appleApiUrl}/${country}/search?types=${type}s&term=${encodeURIComponent(term)}&extend=editorialVideo`;
 }
 
 function buildApiOptions(): RequestOptions {

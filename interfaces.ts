@@ -26,6 +26,20 @@ export interface IResourceData {
   data: IResourceItem[];
 }
 
+export interface ISearchData {
+  results: ISearchResults;
+}
+
+export interface ISearchResults {
+  albums: IAlbums;
+}
+
+export interface IAlbums {
+  data: IResourceItem[];
+  href: string;
+  next: string;
+}
+
 export interface IResourceItem {
   id: string;
   type: string;
@@ -39,7 +53,7 @@ export interface IResourceAttributes {
   releaseDate: string;
   lastModifiedDate: string;
   editorialVideo: IEditorialVideo;
-  artwork: any;
+  artwork: IArtwork;
   name: string;
   artistName: string;
   url: string;
@@ -47,7 +61,9 @@ export interface IResourceAttributes {
   upc: string;
   contentRating: string;
   recordLabel: string;
-  editorialNotes: any;
+  editorialNotes: IEditorialNotes;
+  isCompilation: boolean;
+  isSingle: boolean;
 }
 
 export interface IEditorialVideo {
@@ -57,6 +73,20 @@ export interface IEditorialVideo {
   motionArtistSquare1x1: IVideo;
   motionDetailSquare: IVideo;
   motionArtistFullscreen16x9: IVideo;
+}
+
+export interface IEditorialNotes {
+  short: string;
+  standard: string;
+}
+
+export interface IArtwork extends IResolution {
+  url: string;
+  bgColor: string;
+  textColor1: string;
+  textColor2: string;
+  textColor3: string;
+  textColor4: string;
 }
 
 export interface IVideo {
