@@ -35,4 +35,6 @@ token.txt
 /animated
 
 # User files
-ffmpeg.exe
+*.exe
+*.dll
+*.bak

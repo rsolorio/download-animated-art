@@ -10,6 +10,8 @@ import { RequestOptions } from 'https';
 const tokenFileName = 'token.txt';
 const ffmpegFileName = 'ffmpeg.exe';
 const videoExtension = '.mp4';
+const webpExtension = '.webp';
+const webpFileName = 'video' + webpExtension;
 const videoFileName = 'video' + videoExtension;
 const loopFileName = 'loop' + videoExtension;
 const appleApiUrl = 'https://amp-api.music.apple.com/v1/catalog';
@@ -33,21 +35,24 @@ let token = '';
 
 async function main() {
   const args = getArgs();
-  const resourceInfo = getResourceInfo(args.url);
-  await setupToken();
+  await downloadAnimatedArt(args.url, args.shape, args.loops);
+}
+
+async function downloadAnimatedArt(url: string, shape: string, loops: number) {
+  const resourceInfo = getResourceInfo(url);
   createDirectory(animatedFolder);
 
   switch (resourceInfo.type) {
     case ResourceType.Album:
-      await downloadAlbumVideo(resourceInfo.id, resourceInfo.country, args.shape, args.loops);
+      await downloadAlbumVideo(resourceInfo.id, resourceInfo.country, shape, loops);
       break;
     case ResourceType.Artist:
-      await downloadArtistVideo(resourceInfo.id, resourceInfo.country, args.shape, args.loops);
+      await downloadArtistVideo(resourceInfo.id, resourceInfo.country, shape, loops);
       break;
     case ResourceType.Playlist:
-      await downloadPlaylistVideo(resourceInfo.id, resourceInfo.country, args.shape, args.loops);
+      await downloadPlaylistVideo(resourceInfo.id, resourceInfo.country, shape, loops);
       break;
-  }
+  } 
 }
 
 async function setupToken(): Promise<void> {
@@ -135,10 +140,12 @@ async function downloadVideo(
   country: string,
   shape: string,
   loops: number,
-  getFileNameFn: (attributes: IResourceAttributes) => string
+  getFileNameFn: (attributes: IResourceAttributes) => string,
+  useBestQuality?: boolean
 ): Promise<void> {
   // Get resource data to create file name
   const url = buildApiUrl(country, resourceType, resourceId);
+  await setupToken();
   const resourceResponse = await httpGet(url, buildApiOptions());
   const resourceData = JSON.parse(resourceResponse.text) as IResourceData;
   const attributes = resourceData.data[0].attributes;
@@ -146,6 +153,11 @@ async function downloadVideo(
   const sanitize = require('sanitize-filename');
   const finalVideoName = sanitize(name) + videoExtension;
   const finalVideoPath = buildPath(animatedFolder, finalVideoName);
+
+  if (existsSync(finalVideoPath)) {
+    //console.log('Video already exists: ' + finalVideoPath);
+    return;
+  }
 
   // Use resource data to retrieve and display video options
   const m3u8 = getM3u8(resourceData, shape, resourceType);
@@ -156,14 +168,21 @@ async function downloadVideo(
   const manifest = parser.manifest as IM3u8Manifest;
   printPlaylistTable(manifest.playlists);
 
-  // Prompt user for the video option
-  const readlineSync = require('readline-sync');
-  const selectionId = readlineSync.question('Enter Id: ');
+  let selectionId: string;
+  let uri: string;
+  if (useBestQuality) {
+    uri = manifest.playlists[manifest.playlists.length - 1].uri;
+  }
+  else {
+    // Prompt user for the video option
+    const readlineSync = require('readline-sync');
+    selectionId = readlineSync.question('Enter Id: ');
+    uri = manifest.playlists[parseInt(selectionId, 10)].uri;
+  }
 
   // Download the video
-  const uri = manifest.playlists[parseInt(selectionId, 10)].uri;
   const ffmpegPath = buildPath(ffmpegFileName);
-  console.log('Downloading video...');
+  console.log('Downloading video for: ' + finalVideoPath);
   const videoPath = buildPath(videoFileName);
   const createVideoCommand = `-loglevel quiet -y -i ${uri} -c copy "${videoPath}"`;
   await runCommand(`"${ffmpegPath}" ${createVideoCommand}`);
@@ -181,7 +200,30 @@ async function downloadVideo(
     renameSync(videoPath, finalVideoPath);
   }
 
-  console.log('Video ready.');
+  // CREATE WEBP VERSION
+  const webpPath = buildPath(webpFileName);
+  // -vcodec libwebp: specifies the WebP encoder
+  // -loop 0: 0=loops forever, 1=plays once
+  // -an: removes audio
+  // -filter:v fps=fps=20: sets the framerate
+  // -compression_level 6: 0-6, 6 is slowest/best compression
+  // -q:v 70: sets quality (0-100), higher is better
+  //const webpCommand = `-i "${finalVideoPath}" -vcodec libwebp -filter:v fps=20 -lossless 0 -q:v 70 -loop 0 -an -vsync 0 ${webpPath}`;
+  const webpCommand = `-i "${finalVideoPath}" -vcodec libwebp -filter:v fps=20 -lossless 0 -q:v 70 -loop 0 -an -fps_mode passthrough -compression_level 6 -s 600x600 ${webpPath}`;
+  console.log('Converting to webp...');
+  try {
+    await runCommand(`"${ffmpegPath}" ${webpCommand}`);
+  }
+  catch(err) {
+    console.log('Error');
+    console.log(err);
+  }
+  const finalWebpName = sanitize(name) + webpExtension;
+  const finalWebpPath = buildPath(animatedFolder, finalWebpName);
+  console.log(`Moving from ${webpPath} to ${finalWebpPath}`);
+  renameSync(webpPath, finalWebpPath);
+
+  console.log('Video ready for: ' + finalVideoPath);
 }
 
 function printPlaylistTable(playlists: IM3uPlaylist[]): void {
@@ -249,4 +291,18 @@ function buildSearchUrl(country: string, type: string, term: string): string {
 
 function buildApiOptions(): RequestOptions {
  return { headers: { authorization: 'Bearer ' + token, origin: appleRequestOrigin } }; 
+}
+
+async function downloadFromJson(): Promise<void> {
+  const fileBuffer = readFileSync('animatedUrls.json');
+  const fileText = fileBuffer.toString();
+  const obj = JSON.parse(fileText);
+  for (const albumMetadata of obj) {
+    if (albumMetadata.hasAnimatedArt) {
+      await downloadAnimatedArt(albumMetadata.url, 'square', 0);
+    }
+    else {
+      console.log(albumMetadata);
+    }
+  }
 }

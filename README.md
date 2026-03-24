@@ -33,7 +33,7 @@ The video will be saved under the `animated` folder.
 
 ### Example
 
-    npm run fetch square 2 https://music.apple.com/us/album/coco-original-motion-picture-soundtrack/1440671241
+    npm run fetch square 1 https://music.apple.com/us/album/coco-original-motion-picture-soundtrack/1440671241
 
 ### More Animated Albums
     https://music.apple.com/us/album/one-of-the-boys/715891425
