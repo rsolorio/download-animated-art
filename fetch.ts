@@ -20,7 +20,16 @@ const tokenCheckUrl = buildApiUrl('in', ResourceType.Album, '1551901062');
 const appleRequestOrigin = 'https://music.apple.com';
 /** Just a random album url from the main site to get the token. */
 const tokenRetrieveUrl = appleRequestOrigin + '/us/album/positions-deluxe/1553944254';
-const tokenStart = 'eyJhbGc';
+/**
+ * First 7 characters of the token; the token changes frequently, but not the first 7 characters.
+ * The whole token (including the first 7 characters) changes from time to time;
+ * the retrieveToken function is prepared to find a new token as long as the first 7 characters have not changed;
+ * if the whole token changes, get the source of crossOriginJsPath (a .js file),
+ * and find the token there (scroll and you will find a long string);
+ * or you can try to find calls to the apple api in the page, and see which token is being used,
+ * either as part of the url (devToken param) or as part of the authorization header (bearer token).
+ */
+const tokenStart = 'eyJ0eXA';
 const animatedFolder = 'animated';
 let token = '';
 
@@ -36,6 +45,7 @@ let token = '';
 async function main() {
   const args = getArgs();
   await downloadAnimatedArt(args.url, args.shape, args.loops);
+  //await downloadFromJson();
 }
 
 async function downloadAnimatedArt(url: string, shape: string, loops: number) {
@@ -85,10 +95,15 @@ async function retrieveToken(): Promise<string> {
   const tokenRetrieveResponse = await httpGet(tokenRetrieveUrl, {});
   const crossOriginRegExp = new RegExp('crossorigin src="(/assets/index.+?\.js)"', 'g');
   const crossOriginRegExpResult = tokenRetrieveResponse.text.match(crossOriginRegExp)[0] as string;
+  // This is the path to a js file loaded into the page that contains the token
   const crossOriginJsPath = crossOriginRegExpResult.replace('crossorigin src="', '').replace('"', '');
   const crossOriginJsResponse = await httpGet(appleRequestOrigin + crossOriginJsPath, {});
   const tokenRegExp = new RegExp(`(${tokenStart}.+?)"`);
-  const tokenRegExpResult = crossOriginJsResponse.text.match(tokenRegExp)[0] as string;
+  const tokenMatches = crossOriginJsResponse.text.match(tokenRegExp);
+  if (!tokenMatches?.length) {
+    console.log('Token match not found. You might need to update the tokenStart value.')
+  }
+  const tokenRegExpResult = tokenMatches[0] as string;
   return tokenRegExpResult.replace('"', '');
 }
 
@@ -114,7 +129,7 @@ async function downloadAlbumVideo(resourceId: string, country: string, shape: st
   await downloadVideo(resourceId, ResourceType.Album, country, shape, loops,
     attributes => {
       return `${attributes.artistName} - ${attributes.name} (${attributes.releaseDate.substring(0, 4)})`;
-    }
+    }, true
   );
 }
 
@@ -155,7 +170,7 @@ async function downloadVideo(
   const finalVideoPath = buildPath(animatedFolder, finalVideoName);
 
   if (existsSync(finalVideoPath)) {
-    //console.log('Video already exists: ' + finalVideoPath);
+    console.log('Video already exists: ' + finalVideoPath);
     return;
   }
 
@@ -209,7 +224,7 @@ async function downloadVideo(
   // -compression_level 6: 0-6, 6 is slowest/best compression
   // -q:v 70: sets quality (0-100), higher is better
   //const webpCommand = `-i "${finalVideoPath}" -vcodec libwebp -filter:v fps=20 -lossless 0 -q:v 70 -loop 0 -an -vsync 0 ${webpPath}`;
-  const webpCommand = `-i "${finalVideoPath}" -vcodec libwebp -filter:v fps=20 -lossless 0 -q:v 70 -loop 0 -an -fps_mode passthrough -compression_level 6 -s 600x600 ${webpPath}`;
+  const webpCommand = `-i "${finalVideoPath}" -vcodec libwebp -filter:v fps=20 -lossless 0 -q:v 70 -loop 0 -an -fps_mode passthrough -compression_level 6 -s 1000x1000 ${webpPath}`;
   console.log('Converting to webp...');
   try {
     await runCommand(`"${ffmpegPath}" ${webpCommand}`);

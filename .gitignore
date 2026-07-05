@@ -38,3 +38,6 @@ token.txt
 *.exe
 *.dll
 *.bak
+
+#Other files
+animatedUrls.json
